@@ -1,23 +1,28 @@
 import express from "express";
-import "dotenv/config";
 
 const app = express();
 
 app.use(express.json());
 
-// 🚥 Health check
+// Health check
 app.get("/", (req, res) => {
   res.send("Lark bot webhook is running 🚀");
 });
 
-
-// ⚙️ Hàm gọi OpenRouter
+// Hàm gọi OpenRouter AI
 async function callOpenRouter(prompt) {
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!apiKey) {
+    console.error("Missing OPENROUTER_API_KEY env");
+    return "Server missing AI API key";
+  }
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
       "HTTP-Referer": "https://railway.app",
       "X-Title": "Lark Bot"
     },
@@ -29,58 +34,46 @@ async function callOpenRouter(prompt) {
     })
   });
 
-  const data = await res.json();
-  console.log("OpenRouter response:", data);
+  const data = await response.json();
+  console.log("AI:", data);
 
-  return data?.choices?.[0]?.message?.content ?? "Không nhận được phản hồi từ AI";
+  return data?.choices?.[0]?.message?.content ?? "AI không trả lời";
 }
 
-
-// 🎯 Webhook endpoint
+// Webhook endpoint
 app.post("/lark/webhook", async (req, res) => {
-  try {
-    const body = req.body;
-    console.log("Webhook received:", body);
+  const body = req.body;
+  console.log("Webhook:", body);
 
-    // 🔐 1) URL verification challenge
-    if (body?.challenge) {
-      res.setHeader("Content-Type", "application/json");
-      return res.status(200).send(
-        JSON.stringify({ challenge: body.challenge })
-      );
-    }
-
-    // 💬 2) Nếu là message event → gọi AI
-    if (body?.event?.message?.content) {
-      const content = body.event.message.content;
-
-      // Lark message content thường là JSON string
-      let text = content;
-      try {
-        const parsed = JSON.parse(content);
-        text = parsed.text ?? content;
-      } catch (_) {}
-
-      console.log("User message:", text);
-
-      const aiReply = await callOpenRouter(text);
-
-      console.log("AI reply:", aiReply);
-
-      // (Nếu muốn bot reply lại trong Lark → cần thêm Bot token; bạn nói mình sẽ viết tiếp)
-    }
-
-    // 🔚 trả lời webook OK
-    return res.status(200).json({ code: 0 });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ code: -1 });
+  // ---- 1) xử lý CHALLENGE của Lark ----
+  if (body?.challenge) {
+    res.setHeader("Content-Type", "application/json");
+    return res.status(200).send(
+      JSON.stringify({ challenge: body.challenge })
+    );
   }
+
+  // ---- 2) xử lý message event ----
+  if (body?.event?.message?.content) {
+    let messageText = body.event.message.content;
+
+    // parse Lark content JSON
+    try {
+      const parsed = JSON.parse(messageText);
+      messageText = parsed.text || messageText;
+    } catch (_) {}
+
+    console.log("User message:", messageText);
+
+    const reply = await callOpenRouter(messageText);
+
+    console.log("AI reply:", reply);
+  }
+
+  return res.status(200).json({ code: 0 });
 });
 
-
-// 🚀 Start server
+// Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
