@@ -1,22 +1,31 @@
 import express from "express";
 
 const app = express();
-
 app.use(express.json());
 
-// Health check
-app.get("/", (req, res) => {
-  res.send("Lark bot webhook is running 🚀");
-});
+// ====== LARK AUTH: lấy tenant_access_token ======
+async function getTenantAccessToken() {
+  const res = await fetch(
+    "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        app_id: process.env.LARK_APP_ID,
+        app_secret: process.env.LARK_APP_SECRET
+      })
+    }
+  );
 
-// Hàm gọi OpenRouter AI
+  const data = await res.json();
+  console.log("tenant_access_token:", data);
+
+  return data.tenant_access_token;
+}
+
+// ====== OPENROUTER AI CALL ======
 async function callOpenRouter(prompt) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-
-  if (!apiKey) {
-    console.error("Missing OPENROUTER_API_KEY env");
-    return "Server missing AI API key";
-  }
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -28,24 +37,47 @@ async function callOpenRouter(prompt) {
     },
     body: JSON.stringify({
       model: "google/gemini-2.0-flash-exp:free",
-      messages: [
-        { role: "user", content: prompt }
-      ]
+      messages: [{ role: "user", content: prompt }]
     })
   });
 
   const data = await response.json();
-  console.log("AI:", data);
+  console.log("AI response:", data);
 
   return data?.choices?.[0]?.message?.content ?? "AI không trả lời";
 }
 
-// Webhook endpoint
+// ====== GỬI TIN NHẮN NGƯỢC VỀ LARK ======
+async function replyToLark(messageId, text) {
+  const token = await getTenantAccessToken();
+
+  await fetch(
+    `https://open.larksuite.com/open-apis/im/v1/messages/${messageId}/reply`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        msg_type: "text",
+        content: JSON.stringify({ text })
+      })
+    }
+  );
+}
+
+// ====== HEALTH CHECK ======
+app.get("/", (req, res) => {
+  res.send("Lark bot webhook is running 🚀");
+});
+
+// ====== WEBHOOK ======
 app.post("/lark/webhook", async (req, res) => {
   const body = req.body;
-  console.log("Webhook:", body);
+  console.log("Webhook received:", body);
 
-  // ---- 1) xử lý CHALLENGE của Lark ----
+  // 1) Challenge verification
   if (body?.challenge) {
     res.setHeader("Content-Type", "application/json");
     return res.status(200).send(
@@ -53,28 +85,31 @@ app.post("/lark/webhook", async (req, res) => {
     );
   }
 
-  // ---- 2) xử lý message event ----
-  if (body?.event?.message?.content) {
-    let messageText = body.event.message.content;
+  // 2) Event message
+  if (body?.event?.message?.message_id) {
+    const messageId = body.event.message.message_id;
+    let userContent = body.event.message.content;
 
-    // parse Lark content JSON
+    // Parse nội dung text
     try {
-      const parsed = JSON.parse(messageText);
-      messageText = parsed.text || messageText;
+      const parsed = JSON.parse(userContent);
+      userContent = parsed.text || userContent;
     } catch (_) {}
 
-    console.log("User message:", messageText);
+    console.log("User text:", userContent);
 
-    const reply = await callOpenRouter(messageText);
+    // AI trả lời
+    const aiReply = await callOpenRouter(userContent);
 
-    console.log("AI reply:", reply);
+    // Gửi trả lời về Lark
+    await replyToLark(messageId, aiReply);
   }
 
   return res.status(200).json({ code: 0 });
 });
 
-// Server
+// ====== SERVER ======
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
