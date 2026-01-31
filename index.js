@@ -1,7 +1,6 @@
 import express from "express";
 
 const app = express();
-app.use(express.json());
 
 // ===== GET TENANT ACCESS TOKEN =====
 async function getTenantAccessToken() {
@@ -83,8 +82,8 @@ async function replyToLark(messageId, text) {
 }
 
 
-// BẮT BUỘC
-app.use(express.json());
+// Parse JSON + RAW để không bị mất challenge
+app.use(express.json({ type: "*/*" }));
 
 app.post("/lark/webhook", async (req, res) => {
   console.log("Webhook raw body:", req.body);
