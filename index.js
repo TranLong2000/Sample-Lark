@@ -82,17 +82,27 @@ async function replyToLark(messageId, text) {
   );
 }
 
-// ====== Webhook Lark ======
-app.post("/lark/webhook", async (req, res) => {
-  console.log("Webhook received:", JSON.stringify(req.body, null, 2));
 
-  // 1. Verify challenge (bắt buộc)
+const app = express();
+
+// BẮT BUỘC
+app.use(express.json());
+
+app.post("/lark/webhook", async (req, res) => {
+  console.log("Webhook raw body:", req.body);
+
+  // 1. Verify challenge (BẮT BUỘC)
   if (req.body?.challenge) {
-    return res.status(200).json({ challenge: req.body.challenge });
+    console.log("Challenge received:", req.body.challenge);
+    return res.status(200).json({
+      challenge: req.body.challenge
+    });
   }
 
   const event = req.body?.event;
-  if (!event?.message) return res.json({ code: 0 });
+  if (!event?.message) {
+    return res.status(200).json({ code: 0 });
+  }
 
   const msgId = event.message.message_id;
 
@@ -100,9 +110,11 @@ app.post("/lark/webhook", async (req, res) => {
   let text = "";
   try {
     text = JSON.parse(event.message.content || "{}").text || "";
-  } catch {}
+  } catch (e) {
+    console.log("Parse content error:", e.message);
+  }
 
-  text = text.replace(/@_user_\d+/g, "").trim(); // bỏ mention bot
+  text = text.replace(/@_user_\d+/g, "").trim();
   console.log("User text:", text);
 
   // 3. Gọi AI
@@ -121,7 +133,8 @@ app.post("/lark/webhook", async (req, res) => {
     console.error("Reply Lark error:", e.response?.data || e.message);
   }
 
-  return res.json({ code: 0 });
+  return res.status(200).json({ code: 0 });
 });
 
 app.listen(3000, () => console.log("Server running at :3000"));
+
