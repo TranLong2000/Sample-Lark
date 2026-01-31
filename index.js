@@ -82,40 +82,46 @@ async function replyToLark(messageId, text) {
   );
 }
 
-// ===== WEBHOOK =====
+// ====== Webhook Lark ======
 app.post("/lark/webhook", async (req, res) => {
-
   console.log("Webhook received:", JSON.stringify(req.body, null, 2));
 
-  // challenge verify
+  // 1. Verify challenge (bắt buộc)
   if (req.body?.challenge) {
     return res.status(200).json({ challenge: req.body.challenge });
   }
 
   const event = req.body?.event;
-  if (!event) return res.status(200).json({ code: 0 });
+  if (!event?.message) return res.json({ code: 0 });
 
-  // correct message id path
-  const msgId = event?.message?.message_id;
+  const msgId = event.message.message_id;
 
-  // parse message content
+  // 2. Parse text user gửi
   let text = "";
   try {
-    text = JSON.parse(event?.message?.content || "{}").text || "";
-  } catch (e) {}
+    text = JSON.parse(event.message.content || "{}").text || "";
+  } catch {}
 
-  // remove bot mention
-  text = text.replace(/@_user_\d+/g, "").trim();
-
+  text = text.replace(/@_user_\d+/g, "").trim(); // bỏ mention bot
   console.log("User text:", text);
 
-  const reply = await callOpenRouter(text || "Xin chào 👋");
+  // 3. Gọi AI
+  let reply = "Xin chào 👋";
+  try {
+    reply = await callOpenRouter(text || "Xin chào");
+  } catch (e) {
+    console.error("AI error:", e.message);
+    reply = "❌ AI đang lỗi, thử lại sau.";
+  }
 
-  await replyToLark(msgId, reply);
+  // 4. Trả lời lại Lark
+  try {
+    await replyToLark(msgId, reply);
+  } catch (e) {
+    console.error("Reply Lark error:", e.response?.data || e.message);
+  }
 
-  res.status(200).json({ code: 0 });
+  return res.json({ code: 0 });
 });
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log("Server running")
-);
+app.listen(3000, () => console.log("Server running at :3000"));
