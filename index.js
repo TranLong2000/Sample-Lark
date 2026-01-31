@@ -89,58 +89,49 @@ async function replyToLark(messageId, text) {
 
 // ==================== WEBHOOK ====================
 
-app.post("/lark/webhook", async (req, res) => {
-  console.log("=== LARK WEBHOOK HIT ===");
+// LOG MỌI REQUEST ĐI VÀO (kể cả sai route)
+app.use((req, res, next) => {
+  console.log("\n==============================");
+  console.log("➡️ Incoming request");
+  console.log("Method:", req.method);
+  console.log("URL:", req.url);
   console.log("Headers:", req.headers);
-  console.log("Body:", req.body);
+  next();
+});
 
-  // 1️⃣ VERIFY CHALLENGE (bắt buộc – trả NGAY)
+// Parse JSON (Lark challenge là JSON)
+app.use(express.json());
+
+// LOG BODY SAU KHI PARSE
+app.use((req, res, next) => {
+  console.log("📦 Parsed body:", req.body);
+  next();
+});
+
+app.post("/lark/webhook", async (req, res) => {
+  console.log("🔥 HIT /lark/webhook");
+
+  // 1️⃣ Verify challenge
   if (req.body?.challenge) {
     console.log("✅ Challenge received:", req.body.challenge);
+    console.log("↩️ Responding challenge...");
     return res.status(200).json({ challenge: req.body.challenge });
   }
 
-  // 2️⃣ EVENT MESSAGE
-  const event = req.body?.event;
-  if (!event?.message) {
-    return res.status(200).json({ code: 0 });
-  }
-
-  const msgId = event.message.message_id;
-
-  // 3️⃣ Parse text
-  let text = "";
-  try {
-    text = JSON.parse(event.message.content || "{}").text || "";
-  } catch (e) {
-    console.error("Parse content error:", e.message);
-  }
-
-  text = text.replace(/@_user_\d+/g, "").trim();
-  console.log("User text:", text);
-
-  // 4️⃣ Gọi AI
-  let reply = "Xin chào 👋";
-  try {
-    reply = await callOpenRouter(text || "Xin chào");
-  } catch (e) {
-    console.error("AI error:", e.message);
-    reply = "❌ AI đang lỗi, thử lại sau.";
-  }
-
-  // 5️⃣ Reply về Lark
-  try {
-    await replyToLark(msgId, reply);
-  } catch (e) {
-    console.error("Reply Lark error:", e.message);
-  }
+  console.log("❌ No challenge found in body!");
+  console.log("Body keys:", Object.keys(req.body || {}));
 
   return res.status(200).json({ code: 0 });
 });
 
-// ==================== START SERVER ====================
+// Bắt tất cả route khác để biết Lark có gọi nhầm URL không
+app.all("*", (req, res) => {
+  console.log("❌ HIT WRONG ROUTE:", req.method, req.url);
+  return res.status(404).send("Not Found");
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running at :${PORT}`);
 });
+
